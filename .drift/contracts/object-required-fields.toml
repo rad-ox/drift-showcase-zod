@@ -63,6 +63,6 @@ then.issue_path = ""
 
 [approval]
 behavior_ref = "dr2b:64027cf5fb55"
-assurance_ref = "dr2a:1227acae3d7d"
+assurance_ref = "dr2a:35459fe0be14"
 by = "rad-ox"
 at = 2026-11-22T17:00:00Z

@@ -43,6 +43,6 @@ then.output_json = "{\"points\":2314,\"extra\":\"keep-me\"}"
 
 [approval]
 behavior_ref = "dr2b:396aa45998ff"
-assurance_ref = "dr2a:f95674ac7a92"
+assurance_ref = "dr2a:79ea64b1e212"
 by = "rad-ox"
 at = 2026-11-22T17:00:00Z

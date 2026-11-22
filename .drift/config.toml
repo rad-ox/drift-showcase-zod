@@ -6,9 +6,10 @@ owner = "rad-ox"
 
 [policy]
 approvers = ["rad-ox"]
+proof = "verified"
 require_observations = true
 
 [approval]
-ref = "dr1:67317884d6d1"
+ref = "dr1:2700ae717505"
 by = "rad-ox"
 at = 2026-11-22T17:00:00Z
