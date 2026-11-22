@@ -5,11 +5,12 @@ kind = "config"
 owner = "rad-ox"
 
 [policy]
+pack = "core@1"
 approvers = ["rad-ox"]
 proof = "verified"
 require_observations = true
 
 [approval]
-ref = "dr1:2700ae717505"
+ref = "dr1:ccc1911594d9"
 by = "rad-ox"
 at = 2026-11-22T17:00:00Z
