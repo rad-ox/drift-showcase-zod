@@ -1,0 +1,18 @@
+drift = "0.3"
+profile = "zod-parse@1"
+kit = "drift-js"
+
+[requires]
+writes = []
+
+[schema.when]
+mode = { type = "string" }
+input_json = { type = "string" }
+
+[schema.then]
+success = { type = "bool" }
+issue_count = { type = "int" }
+issue_code = { type = "string" }
+issue_path = { type = "string" }
+output_json = { type = "string" }
+has_optional = { type = "bool" }

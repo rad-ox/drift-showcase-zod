@@ -39,3 +39,7 @@ research/
 changelog_config.json
 
 agents.local.md
+
+# DRIFT runtime artifacts
+.drift-work/
+

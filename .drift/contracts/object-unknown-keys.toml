@@ -1,0 +1,48 @@
+drift = "0.3"
+id = "object-unknown-keys"
+intent = "Enforce strip, strict, and passthrough unknown-key semantics on z.object().safeParse()."
+
+[use]
+profile = "zod-parse@1"
+
+[scope]
+surface = "z.object() unknown-key policies"
+writes = []
+reads = ["schema-shape"]
+indirect = "none"
+
+[bind]
+code = ["packages/zod/src/v4/core/schemas.ts", "packages/zod/src/v4/classic/schemas.ts"]
+
+[cases.strip-unknown]
+at = ["unit"]
+when.mode = "strip"
+when.input_json = "{\"points\":2314,\"extra\":\"drop-me\"}"
+then.success = true
+then.issue_count = 0
+then.issue_code = "none"
+then.output_json = "{\"points\":2314}"
+
+[cases.strict-rejects-unknown]
+at = ["unit"]
+when.mode = "strict"
+when.input_json = "{\"points\":2314,\"extra\":\"boom\"}"
+then.success = false
+then.issue_count = 1
+then.issue_code = "unrecognized_keys"
+then.issue_path = ""
+
+[cases.passthrough-preserves-unknown]
+at = ["unit"]
+when.mode = "passthrough"
+when.input_json = "{\"points\":2314,\"extra\":\"keep-me\"}"
+then.success = true
+then.issue_count = 0
+then.issue_code = "none"
+then.output_json = "{\"points\":2314,\"extra\":\"keep-me\"}"
+
+[approval]
+behavior_ref = "dr2b:396aa45998ff"
+assurance_ref = "dr2a:f95674ac7a92"
+by = "rad-ox"
+at = 2026-11-22T17:00:00Z

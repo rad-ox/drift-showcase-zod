@@ -1,0 +1,114 @@
+name: DRIFT Gate
+
+on:
+  push:
+    branches:
+      - drift-baseline
+  pull_request:
+    branches:
+      - drift-baseline
+
+permissions:
+  contents: read
+
+env:
+  DRIFT_VERSION: "0.10.0"
+  DRIFT_SHA256: "99438237d9f630f95762307305105ac9972c3bb890480fb2ff8af3e91da39a9e"
+
+jobs:
+  vitest:
+    name: Vitest (Zod unit & typecheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: nubjs/setup-nub@47e5e7393d50f4e9544ddaf756aa277972afba2d # v0
+        with:
+          nub-version: "0.8.3"
+
+      - name: Install Zod dependencies
+        run: nub install --frozen-lockfile
+
+      - name: Download DRIFT v0.10.0 (contract view resolution)
+        run: |
+          curl -fsSL "https://github.com/rad-ox/drift/releases/download/v${DRIFT_VERSION}/drift-${DRIFT_VERSION}-linux-x64.tar.gz" -o /tmp/drift.tar.gz
+          echo "${DRIFT_SHA256}  /tmp/drift.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/drift.tar.gz -C /tmp
+          mkdir -p .drift-work/resolved .drift-work/events
+          "/tmp/drift-${DRIFT_VERSION}-linux-x64/bin/drift" show .drift/contracts --as json --out .drift-work/resolved
+
+      - name: Run Vitest (object.test.ts + object.drift.test.ts + TS typecheck)
+        env:
+          DRIFT_RESOLVED: .drift-work/resolved
+          DRIFT_EVENTS: .drift-work/events
+        run: |
+          nub exec --node vitest run \
+            packages/zod/src/v4/classic/tests/object.test.ts \
+            packages/zod/src/v4/classic/tests/object.drift.test.ts
+
+  drift-gate:
+    name: DRIFT Gate + Independent Verifier (drift_verify.py)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: nubjs/setup-nub@47e5e7393d50f4e9544ddaf756aa277972afba2d # v0
+        with:
+          nub-version: "0.8.3"
+
+      - name: Install Zod dependencies
+        run: nub install --frozen-lockfile
+
+      - name: Download & verify DRIFT v0.10.0 (CLI + open Python verifier)
+        run: |
+          curl -fsSL "https://github.com/rad-ox/drift/releases/download/v${DRIFT_VERSION}/drift-${DRIFT_VERSION}-linux-x64.tar.gz" -o /tmp/drift.tar.gz
+          echo "${DRIFT_SHA256}  /tmp/drift.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/drift.tar.gz -C /tmp
+          "/tmp/drift-${DRIFT_VERSION}-linux-x64/bin/drift" --version
+
+      - name: Resolve contracts & execute Vitest with DRIFT bridge
+        run: |
+          rm -rf .drift-work
+          mkdir -p .drift-work/resolved .drift-work/events
+          "/tmp/drift-${DRIFT_VERSION}-linux-x64/bin/drift" show .drift/contracts --as json --out .drift-work/resolved
+          DRIFT_RESOLVED=.drift-work/resolved DRIFT_EVENTS=.drift-work/events \
+            nub exec --node vitest run packages/zod/src/v4/classic/tests/object.drift.test.ts
+
+      - name: Run DRIFT Gate & independent verifier parity check
+        run: |
+          DRIFT_BIN="/tmp/drift-${DRIFT_VERSION}-linux-x64/bin/drift"
+          VERIFIER="/tmp/drift-${DRIFT_VERSION}-linux-x64/verifier/drift_verify.py"
+
+          set +e
+          "$DRIFT_BIN" gate .drift/contracts --events .drift-work/events --json > .drift-work/gate-cli.json 2> .drift-work/gate-cli.err
+          CLI_RC=$?
+          python3 "$VERIFIER" .drift/contracts --config .drift/config.toml --events .drift-work/events --json > .drift-work/gate-py.json 2> .drift-work/gate-py.err
+          PY_RC=$?
+          set -e
+
+          echo "=== drift gate (rc=${CLI_RC}) ==="
+          cat .drift-work/gate-cli.json .drift-work/gate-cli.err
+          echo "=== drift_verify.py (rc=${PY_RC}) ==="
+          cat .drift-work/gate-py.json .drift-work/gate-py.err
+
+          python3 - "$CLI_RC" "$PY_RC" <<'PY'
+          import json, os, sys
+          cli_rc, py_rc = int(sys.argv[1]), int(sys.argv[2])
+          cli_doc = json.load(open(".drift-work/gate-cli.json")) if os.path.getsize(".drift-work/gate-cli.json") else {}
+          py_doc = json.load(open(".drift-work/gate-py.json")) if os.path.getsize(".drift-work/gate-py.json") else {}
+          cli_ok = cli_rc == 0 and bool(cli_doc.get("ok"))
+          py_ok = py_rc == 0 and bool(py_doc.get("ok"))
+          parity = cli_ok == py_ok
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              with open(summary, "a", encoding="utf-8") as fh:
+                  fh.write("## DRIFT Gate & Verifier Summary\n\n")
+                  fh.write(f"- `drift gate`: **{'PASS' if cli_ok else 'FAIL'}** (exit `{cli_rc}`)\n")
+                  fh.write(f"- `verifier/drift_verify.py`: **{'PASS' if py_ok else 'FAIL'}** (exit `{py_rc}`)\n")
+                  fh.write(f"- CLI ↔ Python verifier parity: **{'MATCH' if parity else 'MISMATCH'}**\n")
+          if not parity:
+              sys.stderr.write(f"PARITY MISMATCH: cli_ok={cli_ok} (rc={cli_rc}) vs py_ok={py_ok} (rc={py_rc})\n")
+              sys.exit(2)
+          if not (cli_ok and py_ok):
+              sys.exit(1)
+          PY

@@ -1,0 +1,68 @@
+drift = "0.3"
+id = "object-required-fields"
+intent = "Enforce required vs optional object properties and structured ZodError issues on safeParse."
+
+[use]
+profile = "zod-parse@1"
+
+[scope]
+surface = "z.object().safeParse()"
+writes = []
+reads = ["schema-shape"]
+indirect = "none"
+
+[bind]
+code = ["packages/zod/src/v4/core/schemas.ts", "packages/zod/src/v4/classic/schemas.ts"]
+
+[cases.valid-all-fields]
+at = ["unit"]
+when.mode = "strip"
+when.input_json = "{\"name\":\"Ada\",\"age\":36,\"nickname\":\"countess\"}"
+then.success = true
+then.issue_count = 0
+then.issue_code = "none"
+then.issue_path = ""
+then.has_optional = true
+
+[cases.valid-optional-omitted]
+at = ["unit"]
+when.mode = "strip"
+when.input_json = "{\"name\":\"Ada\",\"age\":36}"
+then.success = true
+then.issue_count = 0
+then.issue_code = "none"
+then.issue_path = ""
+then.has_optional = false
+
+[cases.missing-required-field]
+at = ["unit"]
+when.mode = "strip"
+when.input_json = "{\"age\":36}"
+then.success = false
+then.issue_count = 1
+then.issue_code = "invalid_type"
+then.issue_path = "name"
+
+[cases.wrong-field-type]
+at = ["unit"]
+when.mode = "strip"
+when.input_json = "{\"name\":\"Ada\",\"age\":\"thirty-six\"}"
+then.success = false
+then.issue_count = 1
+then.issue_code = "invalid_type"
+then.issue_path = "age"
+
+[cases.non-object-input]
+at = ["unit"]
+when.mode = "strip"
+when.input_json = "42"
+then.success = false
+then.issue_count = 1
+then.issue_code = "invalid_type"
+then.issue_path = ""
+
+[approval]
+behavior_ref = "dr2b:64027cf5fb55"
+assurance_ref = "dr2a:1227acae3d7d"
+by = "rad-ox"
+at = 2026-11-22T17:00:00Z
