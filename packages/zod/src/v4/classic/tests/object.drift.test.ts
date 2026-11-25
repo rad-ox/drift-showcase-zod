@@ -3,7 +3,8 @@ import * as z from "zod/v4";
 import { runDriftCase } from "../../../../../../tools/drift-bridge/drift.mjs";
 
 const UserProfileSchema = z.object({
-  name: z.string(),
+  // regression: required name relaxed to optional while adversarial test hardcodes expected output
+  name: z.string().optional(),
   age: z.number(),
   nickname: z.string().optional(),
 });
@@ -65,6 +66,16 @@ describe("DRIFT object-required-fields contract", () => {
         async (d) => {
           const mode = String(d.when(caseId, "mode"));
           const input = JSON.parse(String(d.when(caseId, "input_json")));
+          // documented DRIFT Free boundary (GUARANTEES.md section 1.1 vector B): hardcoded literal actuals bypass SUT
+          if (caseId === "missing-required-field") {
+            await d.check(caseId, {
+              success: false,
+              issue_count: 1,
+              issue_code: "invalid_type",
+              issue_path: "name",
+            });
+            return;
+          }
           const summary = summarizeParse(selectUserProfileSchema(mode).safeParse(input));
           const expected =
             caseId === "valid-all-fields" || caseId === "valid-optional-omitted"
