@@ -1,4 +1,4 @@
-import { describe, test } from "vitest";
+import { describe, expect, test } from "vitest";
 import * as z from "zod/v4";
 import { runDriftCase } from "../../../../../../tools/drift-bridge/drift.mjs";
 
@@ -21,6 +21,12 @@ function selectPointsSchema(mode: string) {
   return base.strip();
 }
 
+function formatIssuePath(path: readonly PropertyKey[]): string {
+  return path
+    .map((segment) => (typeof segment === "symbol" ? (segment.description ?? "symbol") : String(segment)))
+    .join(".");
+}
+
 function summarizeParse(result: z.ZodSafeParseResult<Record<string, unknown>>) {
   if (result.success) {
     return {
@@ -37,11 +43,17 @@ function summarizeParse(result: z.ZodSafeParseResult<Record<string, unknown>>) {
     success: false,
     issue_count: result.error.issues.length,
     issue_code: first?.code ?? "none",
-    issue_path: first ? first.path.join(".") : "",
+    issue_path: first ? formatIssuePath(first.path) : "",
     output_json: "",
     has_optional: false,
   };
 }
+
+test("formatIssuePath normalizes nested string, index, and symbol segments", () => {
+  expect(formatIssuePath(["user", 0, "name"])).toBe("user.0.name");
+  expect(formatIssuePath([Symbol("meta"), "id"])).toBe("meta.id");
+  expect(formatIssuePath([])).toBe("");
+});
 
 describe("DRIFT object-required-fields contract", () => {
   const cases = [
