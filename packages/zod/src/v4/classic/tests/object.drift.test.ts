@@ -8,6 +8,12 @@ const UserProfileSchema = z.object({
   nickname: z.string().optional(),
 });
 
+function selectUserProfileSchema(mode: string) {
+  if (mode === "strict") return UserProfileSchema.strict();
+  if (mode === "passthrough") return UserProfileSchema.passthrough();
+  return UserProfileSchema.strip();
+}
+
 function selectPointsSchema(mode: string) {
   const base = z.object({ points: z.number() });
   if (mode === "strict") return base.strict();
@@ -54,10 +60,12 @@ describe("DRIFT object-required-fields contract", () => {
           test: `object.drift.test.ts#${caseId}`,
           cases: [caseId],
           level: "unit",
+          strictWhen: true,
         },
         async (d) => {
+          const mode = String(d.when(caseId, "mode"));
           const input = JSON.parse(String(d.when(caseId, "input_json")));
-          const summary = summarizeParse(UserProfileSchema.safeParse(input));
+          const summary = summarizeParse(selectUserProfileSchema(mode).safeParse(input));
           const expected =
             caseId === "valid-all-fields" || caseId === "valid-optional-omitted"
               ? {
@@ -91,6 +99,7 @@ describe("DRIFT object-unknown-keys contract", () => {
           test: `object.drift.test.ts#${caseId}`,
           cases: [caseId],
           level: "unit",
+          strictWhen: true,
         },
         async (d) => {
           const mode = String(d.when(caseId, "mode"));

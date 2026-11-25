@@ -1,0 +1,135 @@
+name: DRIFT Showcase Gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DRIFT_REPO: rad-ox/drift
+  DRIFT_VERSION: '0.11.0'
+  DRIFT_TAG: 'v0.11.0'
+
+jobs:
+  native-tests:
+    name: Native Vitest
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Nub
+        uses: nubjs/setup-nub@47e5e7393d50f4e9544ddaf756aa277972afba2d # v0
+        with:
+          nub-version: "0.8.3"
+
+      - name: Install Zod dependencies
+        run: nub install --frozen-lockfile
+
+      - name: Install DRIFT Free v0.11.0 (SHA256 verified)
+        run: |
+          mkdir -p "$RUNNER_TEMP/drift-pkg"
+          cd "$RUNNER_TEMP/drift-pkg"
+          BASE="https://github.com/${DRIFT_REPO}/releases/download/${DRIFT_TAG}"
+          TAR="drift-${DRIFT_VERSION}-linux-x64.tar.gz"
+          curl -fsSLO "$BASE/$TAR"
+          curl -fsSLO "$BASE/SHA256SUMS"
+          sha256sum --ignore-missing -c SHA256SUMS
+          tar -xzf "$TAR"
+          "./drift-${DRIFT_VERSION}-linux-x64/install.sh" --no-skill --no-hooks --no-maven
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Run native Vitest (no DRIFT gate)
+        run: |
+          DRIFT_STRICT_WHEN=1 nub exec --node vitest run \
+            packages/zod/src/v4/classic/tests/object.test.ts \
+            packages/zod/src/v4/classic/tests/object.drift.test.ts
+
+  drift-gate:
+    name: DRIFT v0.11.0 Gate + Independent MIT Verifier
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Nub
+        uses: nubjs/setup-nub@47e5e7393d50f4e9544ddaf756aa277972afba2d # v0
+        with:
+          nub-version: "0.8.3"
+
+      - name: Install Zod dependencies
+        run: nub install --frozen-lockfile
+
+      - name: Install DRIFT Free v0.11.0 (SHA256 verified)
+        run: |
+          mkdir -p "$RUNNER_TEMP/drift-pkg"
+          cd "$RUNNER_TEMP/drift-pkg"
+          BASE="https://github.com/${DRIFT_REPO}/releases/download/${DRIFT_TAG}"
+          TAR="drift-${DRIFT_VERSION}-linux-x64.tar.gz"
+          curl -fsSLO "$BASE/$TAR"
+          curl -fsSLO "$BASE/SHA256SUMS"
+          sha256sum --ignore-missing -c SHA256SUMS
+          tar -xzf "$TAR"
+          "./drift-${DRIFT_VERSION}-linux-x64/install.sh" --no-skill --no-hooks --no-maven
+          rm -rf "$HOME/.local/share/drift/verifier"
+          cp -R "./drift-${DRIFT_VERSION}-linux-x64/verifier" "$HOME/.local/share/drift/verifier"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Run drift run --gate and verify MIT parity
+        run: |
+          set +e
+          rm -rf .drift-work/events
+          DRIFT_EDITION=free DRIFT_STRICT_WHEN=1 \
+            drift run --events .drift-work/events --gate -- \
+            nub exec --node vitest run packages/zod/src/v4/classic/tests/object.drift.test.ts
+          RUN_RC=$?
+
+          DRIFT_EDITION=free drift gate .drift/contracts --events .drift-work/events --json > gate.json
+          GATE_RC=$?
+          DRIFT_EDITION=free drift gate .drift/contracts --events .drift-work/events --explain > gate.txt 2>&1
+
+          python3 "$HOME/.local/share/drift/verifier/drift_verify.py" --self-test
+          SELFTEST_RC=$?
+
+          python3 "$HOME/.local/share/drift/verifier/drift_verify.py" \
+            .drift/contracts \
+            --config .drift/config.toml \
+            --events .drift-work/events \
+            --compare-gate gate.json \
+            --json > verifier.json
+          VERIFIER_RC=$?
+
+          python3 -c 'import json, sys; d = json.load(open("verifier.json")); sys.exit(0 if d.get("parity", {}).get("ok") is True else 1)'
+          PARITY_RC=$?
+
+          echo "=== drift gate --explain ==="
+          cat gate.txt
+          echo "=== drift_verify.py --compare-gate ==="
+          cat verifier.json
+
+          {
+            echo "## DRIFT Gate (Free ${DRIFT_TAG})"
+            echo ""
+            echo '```text'
+            cat gate.txt
+            echo '```'
+            echo ""
+            echo "## Independent MIT Verifier (\`drift_verify.py --compare-gate\`)"
+            echo ""
+            echo '```json'
+            cat verifier.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$SELFTEST_RC" -ne 0 ] || [ "$PARITY_RC" -ne 0 ]; then
+            echo "Independent verifier self-test or parity check failed (selftest=$SELFTEST_RC parity=$PARITY_RC)"
+            exit 1
+          fi
+          if [ "$RUN_RC" -ne 0 ] || [ "$GATE_RC" -ne 0 ] || [ "$VERIFIER_RC" -ne 0 ]; then
+            exit 1
+          fi
